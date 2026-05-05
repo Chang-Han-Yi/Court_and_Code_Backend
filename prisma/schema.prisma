@@ -4,8 +4,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
 }
 
 model Article {
@@ -13,6 +11,7 @@ model Article {
   title     String
   img       String?
   content   String
+  isPublished Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
