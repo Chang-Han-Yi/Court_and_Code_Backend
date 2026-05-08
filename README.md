@@ -166,3 +166,78 @@ npm run dev
 ### 注意
 
 若未先同步 migration，就直接啟動開發並做 CRUD，常見錯誤是欄位不存在或型別不一致。
+
+## 7. 這次為什麼一開始無法啟動（實際案例）
+
+你這次啟動失敗是「連續兩個前置條件沒完成」，不是 Supabase 帳密問題。
+
+### 錯誤順序
+
+1. 第一次啟動錯誤：`Cannot find module 'multer'`
+   - 原因：`index.js` 有 `require("multer")`，但當時尚未安裝 `multer`。
+   - 修正：執行 `npm i multer`。
+
+2. 第二次啟動錯誤：`Cannot find module '.prisma/client/default'`
+   - 原因：Prisma Client 尚未產生（`@prisma/client` 需要 `.prisma/client` 產物）。
+   - 修正：執行 `npm run prisma:generate`。
+
+3. 完成以上兩步後，才會進入真正的資料庫連線驗證階段（`/health`）。
+
+### 關鍵觀念
+
+啟動流程是分層的：
+
+1. 先通過 Node.js 模組載入（例如 `multer`）。
+2. 再通過 ORM 產物完整性（Prisma Client）。
+3. 最後才是 DB 連線是否成功（Supabase 連線字串是否正確）。
+
+## 8. 標準啟動 SOP（詳細版）
+
+每次新裝置或重拉專案後，建議照以下順序執行：
+
+### A. 一次性初始化
+
+```bash
+npm install
+npm run prisma:generate
+```
+
+### B. 如有 schema 變更再執行
+
+```bash
+npm run prisma:migrate
+npm run prisma:generate
+```
+
+### C. 啟動服務
+
+```bash
+npm run dev
+```
+
+### D. 驗證
+
+1. 健康檢查：`GET /health`
+2. CRUD 檢查：`GET /articles`（或任一 `/articles` API）
+
+## 9. 啟動排錯速查（Fail Fast）
+
+1. **Status：`Cannot find module 'xxx'`**
+   - **Root Cause：** 套件未安裝或 `node_modules` 不完整。
+   - **Suggested Fix：** `npm install`，若是特定套件缺失再補 `npm i <package>`。
+
+2. **Status：`Cannot find module '.prisma/client/default'`**
+   - **Root Cause：** Prisma Client 未產生。
+   - **Suggested Fix：** `npm run prisma:generate`。
+
+3. **Status：`DB_AUTH_FAILED`**
+   - **Root Cause：** 資料庫帳密錯誤。
+   - **Suggested Fix：** 檢查 `DATABASE_URL` / `DIRECT_URL` 密碼是否正確。
+
+4. **Status：`DB_HOST_NOT_FOUND`**
+   - **Root Cause：** host 錯誤或非 Supabase host。
+   - **Suggested Fix：** 重新貼上 Supabase 提供的連線字串。
+
+5. **Status：`DB_TIMEOUT` 或 `DB_UNREACHABLE`**
+   - **Root Cause：** 網路不可達、port 或 SSL 參數不正確。
+   - **Suggested Fix：** 檢查 `sslmode=require`、port、網路連線狀態。
