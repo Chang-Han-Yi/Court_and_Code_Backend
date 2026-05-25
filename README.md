@@ -1,47 +1,39 @@
-# 後端說明（Supabase + Prisma + pg）
+# Court_and_Code · 後端（my-volleyball-api）
 
-## 1. 架構說明
+張翰浥個人專區 **Court_and_Code** 的 **後端 API 專案**，提供文章 CRUD、圖片上傳與資料庫連線。
 
-本後端目前是 `Express + Prisma + pg` 架構，資料庫使用 PostgreSQL 協定連線。
+> 本 repo 為全端工作區中的 **後端一半**。前端位於同層的 [`my-volleyball-vue`](../my-volleyball-vue/)。  
+> 整體說明、同時啟動方式與 API 功能對照表見 [根目錄 README](../README.md)。
 
-重點如下：
+## 與前端的關係
 
-1. 有使用 `pg` 套件（`package.json` 可見 `pg` dependency）。
-2. API 執行時由 `index.js` 讀取 `process.env.DATABASE_URL` 建立 `Pool`。
-3. 再把該連線池交給 Prisma adapter（`@prisma/adapter-pg`）使用。
-4. 沒有使用 `@supabase/supabase-js` SDK。
+前端透過 `VITE_API_BASE_URL`（預設 `http://localhost:3000`）呼叫本專案 API。
 
-這代表目前是把 Supabase 當成「線上 PostgreSQL 資料庫」使用。
+**建議啟動順序：**
 
-## 2. 為什麼要分兩條連線字串
+1. 本專案（後端 + 資料庫連線）
+2. 前端 `my-volleyball-vue`
 
-本專案分為兩種用途：
+若後端未啟動，前端的文章列表、詳情與後台管理會載入失敗。
 
-1. `DATABASE_URL`（執行用）
-   - 用途：後端 API 平常查詢與寫入資料。
-   - 建議：使用 Supabase 的 Pooler connection。
+## 技術堆疊
 
-2. `DIRECT_URL`（migration 用）
-   - 用途：`prisma migrate`、資料庫結構異動。
-   - 建議：使用 Supabase 的 Direct connection（通常為 5432）。
+- Node.js + [Express 5](https://expressjs.com/)
+- [Prisma](https://www.prisma.io/) + PostgreSQL（[Supabase](https://supabase.com/)）
+- `pg` 連線池 + `@prisma/adapter-pg`
+- [Multer](https://github.com/expressjs/multer) 圖片上傳
 
-簡單記法：
+## 環境建置
 
-1. 平常跑 API 走 `DATABASE_URL`。
-2. 改資料表結構走 `DIRECT_URL`。
+### 1. 安裝依賴
 
-## 3. 重新連上 Supabase 的操作步驟
+```bash
+npm install
+```
 
-### 步驟 1：取得 Supabase 連線字串
+### 2. 設定 `.env`
 
-在 Supabase 後台進入 `Project Settings > Database > Connection string`，複製：
-
-1. `Pooler connection`。
-2. `Direct connection`。
-
-### 步驟 2：更新 `.env`
-
-在 `back/.env` 設定：
+在 `my-volleyball-api` 目錄建立 `.env`：
 
 ```env
 DATABASE_URL="postgresql://<user>:<password>@<pooler-host>:<port>/<db>?sslmode=require"
@@ -49,103 +41,66 @@ DIRECT_URL="postgresql://<user>:<password>@<direct-host>:5432/<db>?sslmode=requi
 PORT=3000
 ```
 
-注意事項：
+- `DATABASE_URL`：API 執行用（建議 Supabase **Pooler** 連線）
+- `DIRECT_URL`：`prisma migrate` 用（建議 Supabase **Direct** 連線）
 
-1. `DATABASE_URL` 要放 Pooler。
-2. `DIRECT_URL` 要放 Direct。
-3. 連線字串請使用 `postgres://` 或 `postgresql://`。
-4. 不要使用 `prisma+postgres://localhost:...` 這種本機開發字串來連 Supabase。
-
-### 步驟 3：啟動後端
-
-在 `back` 目錄執行：
-
-```bash
-npm install
-npm run dev
-```
-
-### 步驟 4：驗證連線
-
-呼叫健康檢查：
-
-`GET /health`
-
-成功時應回傳 `ok: true`。  
-若失敗，常見代碼：
-
-1. `DB_AUTH_FAILED`：帳號或密碼錯誤。
-2. `DB_HOST_NOT_FOUND`：主機名稱錯誤。
-3. `DB_TIMEOUT` 或 `DB_UNREACHABLE`：網路或連線參數錯誤。
-
-## 4. 常見誤解
-
-1. 「走 `pg`」不等於沒用 Supabase。  
-   只要 `DATABASE_URL` 指向 Supabase 的 PostgreSQL host，就是在使用 Supabase 資料庫。
-
-2. `@supabase/supabase-js` 不是連 Supabase 資料庫的唯一方式。  
-   本專案目前是走 PostgreSQL 直連路線（`pg + Prisma`）。
-
-## 5. 不同裝置 clone 後，如何連上同一個 DB 並做 CRUD
-
-### 情境
-
-當你在新裝置 `git clone` 此專案時，因為 `.env` 不會被版控，你一定要在該裝置重新設定環境變數，才會連到同一個 Supabase 資料庫。
-
-### 操作步驟
-
-1. clone 專案後，進入 `back` 目錄並安裝依賴。
-
-```bash
-npm install
-```
-
-2. 在新裝置建立 `back/.env`，填入同一組 Supabase 連線設定。
-
-```env
-DATABASE_URL="postgresql://<user>:<password>@<pooler-host>:<port>/<db>?sslmode=require"
-DIRECT_URL="postgresql://<user>:<password>@<direct-host>:5432/<db>?sslmode=require"
-PORT=3000
-```
-
-3. 產生 Prisma Client（新裝置首次建議執行）。
+### 3. 產生 Prisma Client
 
 ```bash
 npm run prisma:generate
 ```
 
-4. 啟動後端。
+### 4. 啟動開發伺服器
 
 ```bash
 npm run dev
 ```
 
-5. 驗證資料庫連線。
-   - 呼叫 `GET /health`。
-   - 回傳 `ok: true` 代表已連線成功。
+預設：`http://localhost:3000`
 
-6. 開始 CRUD。
-   - 只要 API 可用且 DB 連線成功，呼叫 `/articles` 相關 API 即可對同一個 Supabase 資料庫做 CRUD。
+### 5. 驗證連線
 
-### 團隊建議
+```bash
+curl http://localhost:3000/health
+```
 
-1. 僅在指定人員或 CI 環境執行 `prisma migrate`，避免多人同時變更正式 schema。
-2. 所有裝置都使用同一個 Supabase 專案連線字串，避免發生資料不一致。
+成功時回傳 `{ "ok": true }`。
 
-## 6. 欄位（schema）有變更時，開發前要跑什麼
+## API 端點
 
-### 什麼時候需要跑 Prisma 指令
+| 方法 | 路徑 | 說明 | 前端使用處 |
+|------|------|------|------------|
+| `GET` | `/health` | 健康檢查（含 DB） | 維運／除錯用 |
+| `GET` | `/articles` | 文章列表；`?includeDraft=1` 含草稿 | 前台列表、內容總覽、後台 Dashboard |
+| `GET` | `/articles/:id` | 單篇文章；`?includeDraft=1` 可讀草稿 | 文章詳情、後台編輯頁 |
+| `POST` | `/articles` | 新增文章 | 後台新增文章 |
+| `PUT` | `/articles/:id` | 更新文章（部分欄位） | 後台編輯、上架／下架 |
+| `DELETE` | `/articles/:id` | 刪除文章 | 後台 Dashboard |
+| `POST` | `/uploads` | 上傳圖片（`image` 欄位，最大 5MB） | 後台新增／編輯文章封面 |
+| — | `/uploads/:filename` | 靜態圖片存取 | 文章封面 URL |
 
-當你有以下變更時，開發前要先同步資料庫與 Prisma Client：
+### 文章欄位（Article）
 
-1. 新增或刪除欄位。
-2. 修改欄位型別。
-3. 新增 model 或 relation。
-4. 拉下來的程式碼包含新的 migration 檔案。
+| 欄位 | 說明 |
+|------|------|
+| `id` | 自訂字串 ID（前端以 UUID 產生） |
+| `title` | 標題 |
+| `content` | 內文 |
+| `img` | 封面圖 URL（可為 null） |
+| `isPublished` | 是否上架（預設 `false`） |
+| `createdAt` / `updatedAt` | 建立與更新時間 |
 
-### 建議流程
+前台 `GET /articles` 預設只回傳 `isPublished: true` 的文章。
 
-在 `back` 目錄執行：
+## 架構說明
+
+本專案為 `Express + Prisma + pg` 架構：
+
+1. 以 `pg` 的 `Pool` 讀取 `DATABASE_URL` 建立連線池。
+2. 透過 `@prisma/adapter-pg` 交給 Prisma Client 使用。
+3. 將 Supabase 作為線上 PostgreSQL 資料庫（未使用 `@supabase/supabase-js` SDK）。
+
+## Schema 變更時
 
 ```bash
 npm run prisma:migrate
@@ -153,9 +108,7 @@ npm run prisma:generate
 npm run dev
 ```
 
-### 只換裝置但 schema 沒改時
-
-若只是新裝置 clone，且 schema 沒有變更，通常執行以下流程即可：
+僅換裝置、schema 未變時：
 
 ```bash
 npm install
@@ -163,81 +116,21 @@ npm run prisma:generate
 npm run dev
 ```
 
-### 注意
+## 新裝置 Clone 後
 
-若未先同步 migration，就直接啟動開發並做 CRUD，常見錯誤是欄位不存在或型別不一致。
+`.env` 不會進版控，需在新裝置重新建立 `.env` 並填入同一組 Supabase 連線字串，各裝置才會連到同一資料庫。
 
-## 7. 這次為什麼一開始無法啟動（實際案例）
+## 啟動排錯
 
-你這次啟動失敗是「連續兩個前置條件沒完成」，不是 Supabase 帳密問題。
+| 狀況 | 處理方式 |
+|------|----------|
+| `Cannot find module 'multer'` | `npm install` |
+| `Cannot find module '.prisma/client/default'` | `npm run prisma:generate` |
+| `/health` 回傳 `DB_AUTH_FAILED` | 檢查 `.env` 帳密 |
+| `/health` 回傳 `DB_HOST_NOT_FOUND` | 檢查 Supabase 連線 host |
+| `/health` 回傳 `DB_TIMEOUT` | 檢查網路、`sslmode=require`、port |
 
-### 錯誤順序
+## 相關文件
 
-1. 第一次啟動錯誤：`Cannot find module 'multer'`
-   - 原因：`index.js` 有 `require("multer")`，但當時尚未安裝 `multer`。
-   - 修正：執行 `npm i multer`。
-
-2. 第二次啟動錯誤：`Cannot find module '.prisma/client/default'`
-   - 原因：Prisma Client 尚未產生（`@prisma/client` 需要 `.prisma/client` 產物）。
-   - 修正：執行 `npm run prisma:generate`。
-
-3. 完成以上兩步後，才會進入真正的資料庫連線驗證階段（`/health`）。
-
-### 關鍵觀念
-
-啟動流程是分層的：
-
-1. 先通過 Node.js 模組載入（例如 `multer`）。
-2. 再通過 ORM 產物完整性（Prisma Client）。
-3. 最後才是 DB 連線是否成功（Supabase 連線字串是否正確）。
-
-## 8. 標準啟動 SOP（詳細版）
-
-每次新裝置或重拉專案後，建議照以下順序執行：
-
-### A. 一次性初始化
-
-```bash
-npm install
-npm run prisma:generate
-```
-
-### B. 如有 schema 變更再執行
-
-```bash
-npm run prisma:migrate
-npm run prisma:generate
-```
-
-### C. 啟動服務
-
-```bash
-npm run dev
-```
-
-### D. 驗證
-
-1. 健康檢查：`GET /health`
-2. CRUD 檢查：`GET /articles`（或任一 `/articles` API）
-
-## 9. 啟動排錯速查（Fail Fast）
-
-1. **Status：`Cannot find module 'xxx'`**
-   - **Root Cause：** 套件未安裝或 `node_modules` 不完整。
-   - **Suggested Fix：** `npm install`，若是特定套件缺失再補 `npm i <package>`。
-
-2. **Status：`Cannot find module '.prisma/client/default'`**
-   - **Root Cause：** Prisma Client 未產生。
-   - **Suggested Fix：** `npm run prisma:generate`。
-
-3. **Status：`DB_AUTH_FAILED`**
-   - **Root Cause：** 資料庫帳密錯誤。
-   - **Suggested Fix：** 檢查 `DATABASE_URL` / `DIRECT_URL` 密碼是否正確。
-
-4. **Status：`DB_HOST_NOT_FOUND`**
-   - **Root Cause：** host 錯誤或非 Supabase host。
-   - **Suggested Fix：** 重新貼上 Supabase 提供的連線字串。
-
-5. **Status：`DB_TIMEOUT` 或 `DB_UNREACHABLE`**
-   - **Root Cause：** 網路不可達、port 或 SSL 參數不正確。
-   - **Suggested Fix：** 檢查 `sslmode=require`、port、網路連線狀態。
+- [根目錄 README（雙專案總覽）](../README.md)
+- [前端 README](../my-volleyball-vue/README.md)
