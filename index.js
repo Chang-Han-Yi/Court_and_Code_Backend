@@ -7,10 +7,29 @@ const multer = require("multer");
 const { PrismaClient } = require("@prisma/client");
 const { PrismaPg } = require("@prisma/adapter-pg");
 const { Pool } = require("pg");
+const {
+  ABOUT_DEFAULTS,
+  aboutContentKey,
+  isAboutPage,
+} = require("./content/aboutDefaults");
+const {
+  CONTACT_CONTENT_KEY,
+  CONTACT_DEFAULT,
+} = require("./content/contactDefaults");
+const {
+  EXPERIENCE_DEFAULTS,
+  experienceContentKey,
+  isExperiencePage,
+} = require("./content/experienceDefaults");
+const {
+  buildOverviewFromEntries,
+  normalizeExperiencePayload,
+} = require("./content/experienceUtils");
 
 const app = express();
+// DIRECT_URL 優先：目前 pooler（DATABASE_URL）若 tenant 未就緒會連線失敗
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: process.env.DIRECT_URL || process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
   connectionTimeoutMillis: 10000,
 });
@@ -46,6 +65,19 @@ app.use(cors());
 app.use(express.json());
 app.use("/uploads", express.static(uploadsDir));
 
+const ARTICLE_CATEGORIES = ["volleyball", "engineer"];
+
+const articleSelect = {
+  id: true,
+  title: true,
+  img: true,
+  content: true,
+  category: true,
+  isPublished: true,
+  createdAt: true,
+  updatedAt: true,
+};
+
 function normalizeArticlePayload(body) {
   const payload = {};
 
@@ -55,6 +87,12 @@ function normalizeArticlePayload(body) {
   if (body.content !== undefined) payload.content = String(body.content).trim();
   if (body.isPublished !== undefined)
     payload.isPublished = body.isPublished === true || body.isPublished === "true";
+  if (body.category !== undefined) {
+    const category = String(body.category).trim();
+    if (ARTICLE_CATEGORIES.includes(category)) {
+      payload.category = category;
+    }
+  }
 
   return payload;
 }
@@ -109,19 +147,19 @@ app.get("/health", async (_req, res) => {
 
 app.get("/articles", async (req, res) => {
   const includeDraft = req.query.includeDraft === "1";
+  const category = String(req.query.category || "").trim();
+  if (category && !ARTICLE_CATEGORIES.includes(category)) {
+    return res.status(400).json({ message: "Invalid category" });
+  }
+
   try {
     const articles = await prisma.article.findMany({
-      where: includeDraft ? {} : { isPublished: true },
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        title: true,
-        img: true,
-        content: true,
-        isPublished: true,
-        createdAt: true,
-        updatedAt: true,
+      where: {
+        ...(includeDraft ? {} : { isPublished: true }),
+        ...(category ? { category } : {}),
       },
+      orderBy: { createdAt: "desc" },
+      select: articleSelect,
     });
 
     return res.json({ data: articles });
@@ -139,15 +177,7 @@ app.get("/articles/:id", async (req, res) => {
   try {
     const article = await prisma.article.findUnique({
       where: { id: req.params.id },
-      select: {
-        id: true,
-        title: true,
-        img: true,
-        content: true,
-        isPublished: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: articleSelect,
     });
 
     if (!article) {
@@ -186,6 +216,7 @@ app.post("/articles", async (req, res) => {
         title: payload.title,
         img: payload.img || null,
         content: payload.content,
+        category: payload.category || "volleyball",
         isPublished: payload.isPublished ?? false,
       },
     });
@@ -235,6 +266,187 @@ app.delete("/articles/:id", async (req, res) => {
     }
     console.error("[articles:delete] Failed:", String(error?.message || error));
     return res.status(500).json({ message: "Failed to delete article" });
+  }
+});
+
+async function ensureAboutPage(page) {
+  const key = aboutContentKey(page);
+  const existing = await prisma.siteContent.findUnique({ where: { key } });
+  if (existing) return existing.data;
+
+  const created = await prisma.siteContent.create({
+    data: { key, data: ABOUT_DEFAULTS[page] },
+  });
+  return created.data;
+}
+
+app.get("/about/:page", async (req, res) => {
+  const page = req.params.page;
+  if (!isAboutPage(page)) {
+    return res.status(404).json({ message: "About page not found" });
+  }
+
+  try {
+    const data = await ensureAboutPage(page);
+    return res.json(data);
+  } catch (error) {
+    console.error("[about:get] Failed:", String(error?.message || error));
+    return res.status(500).json({ message: "Failed to fetch about content" });
+  }
+});
+
+app.put("/about/:page", async (req, res) => {
+  const page = req.params.page;
+  if (!isAboutPage(page)) {
+    return res.status(404).json({ message: "About page not found" });
+  }
+  if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
+    return res.status(400).json({ message: "Request body must be a JSON object" });
+  }
+
+  const key = aboutContentKey(page);
+  try {
+    const row = await prisma.siteContent.upsert({
+      where: { key },
+      create: { key, data: req.body },
+      update: { data: req.body },
+    });
+    return res.json(row.data);
+  } catch (error) {
+    console.error("[about:put] Failed:", String(error?.message || error));
+    return res.status(500).json({ message: "Failed to update about content" });
+  }
+});
+
+async function ensureContact() {
+  const existing = await prisma.siteContent.findUnique({
+    where: { key: CONTACT_CONTENT_KEY },
+  });
+  if (existing) return existing.data;
+
+  const legacy = await prisma.siteContent.findUnique({
+    where: { key: "contact.overview" },
+  });
+  if (legacy) {
+    const created = await prisma.siteContent.create({
+      data: { key: CONTACT_CONTENT_KEY, data: legacy.data },
+    });
+    return created.data;
+  }
+
+  const created = await prisma.siteContent.create({
+    data: { key: CONTACT_CONTENT_KEY, data: CONTACT_DEFAULT },
+  });
+  return created.data;
+}
+
+app.get("/contact", async (_req, res) => {
+  try {
+    const data = await ensureContact();
+    return res.json(data);
+  } catch (error) {
+    console.error("[contact:get] Failed:", String(error?.message || error));
+    return res.status(500).json({ message: "Failed to fetch contact content" });
+  }
+});
+
+app.put("/contact", async (req, res) => {
+  if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
+    return res.status(400).json({ message: "Request body must be a JSON object" });
+  }
+
+  try {
+    const row = await prisma.siteContent.upsert({
+      where: { key: CONTACT_CONTENT_KEY },
+      create: { key: CONTACT_CONTENT_KEY, data: req.body },
+      update: { data: req.body },
+    });
+    return res.json(row.data);
+  } catch (error) {
+    console.error("[contact:put] Failed:", String(error?.message || error));
+    return res.status(500).json({ message: "Failed to update contact content" });
+  }
+});
+
+async function ensureExperiencePage(page) {
+  const key = experienceContentKey(page);
+  const existing = await prisma.siteContent.findUnique({ where: { key } });
+  if (existing) return existing.data;
+
+  const created = await prisma.siteContent.create({
+    data: { key, data: EXPERIENCE_DEFAULTS[page] },
+  });
+  return created.data;
+}
+
+async function getExperienceEntries(page) {
+  const data = await ensureExperiencePage(page);
+  return Array.isArray(data.entries) ? data.entries : [];
+}
+
+async function syncExperienceOverview() {
+  const volleyballEntries = await getExperienceEntries("volleyball");
+  const engineerEntries = await getExperienceEntries("engineer");
+  const overview = buildOverviewFromEntries(volleyballEntries, engineerEntries);
+  const key = experienceContentKey("overview");
+
+  await prisma.siteContent.upsert({
+    where: { key },
+    create: { key, data: overview },
+    update: { data: overview },
+  });
+
+  return overview;
+}
+
+app.get("/experience/:page", async (req, res) => {
+  const page = req.params.page;
+  if (!isExperiencePage(page)) {
+    return res.status(404).json({ message: "Experience page not found" });
+  }
+
+  try {
+    if (page === "overview") {
+      const data = await syncExperienceOverview();
+      return res.json(data);
+    }
+
+    const data = await ensureExperiencePage(page);
+    return res.json(data);
+  } catch (error) {
+    console.error("[experience:get] Failed:", String(error?.message || error));
+    return res.status(500).json({ message: "Failed to fetch experience content" });
+  }
+});
+
+app.put("/experience/:page", async (req, res) => {
+  const page = req.params.page;
+  if (!isExperiencePage(page)) {
+    return res.status(404).json({ message: "Experience page not found" });
+  }
+  if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
+    return res.status(400).json({ message: "Request body must be a JSON object" });
+  }
+  if (page === "overview") {
+    return res.status(400).json({ message: "Overview is generated from volleyball and engineer entries" });
+  }
+
+  const key = experienceContentKey(page);
+  try {
+    const normalized = normalizeExperiencePayload(page, req.body);
+    const row = await prisma.siteContent.upsert({
+      where: { key },
+      create: { key, data: normalized },
+      update: { data: normalized },
+    });
+    await syncExperienceOverview();
+    return res.json(row.data);
+  } catch (error) {
+    if (error.statusCode === 400) {
+      return res.status(400).json({ message: error.message });
+    }
+    console.error("[experience:put] Failed:", String(error?.message || error));
+    return res.status(500).json({ message: "Failed to update experience content" });
   }
 });
 

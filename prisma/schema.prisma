@@ -7,12 +7,19 @@ datasource db {
 }
 
 model Article {
-  id        String   @id
-  title     String
-  img       String?
-  content   String
-  isPublished Boolean @default(false)
-  createdAt DateTime @default(now())
+  id          String   @id
+  title       String
+  img         String?
+  content     String
+  category    String   @default("volleyball")
+  isPublished Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model SiteContent {
+  key       String   @id
+  data      Json
   updatedAt DateTime @updatedAt
 }
 

@@ -1,8 +1,8 @@
-# Court_and_Code · 後端（my-volleyball-api）
+# Court_and_Code · 後端
 
-張翰浥個人專區 **Court_and_Code** 的 **後端 API 專案**，提供文章 CRUD、圖片上傳與資料庫連線。
+**Court_and_Code** 的 **後端 API 專案**，提供文章 CRUD、圖片上傳與資料庫連線。
 
-> 本 repo 為全端工作區中的 **後端一半**。前端位於同層的 [`my-volleyball-vue`](../my-volleyball-vue/)。  
+> 本 repo 為全端工作區中的 **後端一半**。前端位於同層的 [`Court_and_Code_Frontend`](../Court_and_Code_Frontend/)。  
 > 整體說明、同時啟動方式與 API 功能對照表見 [根目錄 README](../README.md)。
 
 ## 與前端的關係
@@ -12,7 +12,7 @@
 **建議啟動順序：**
 
 1. 本專案（後端 + 資料庫連線）
-2. 前端 `my-volleyball-vue`
+2. 前端 `Court_and_Code_Frontend`
 
 若後端未啟動，前端的文章列表、詳情與後台管理會載入失敗。
 
@@ -33,7 +33,7 @@ npm install
 
 ### 2. 設定 `.env`
 
-在 `my-volleyball-api` 目錄建立 `.env`：
+在 `Court_and_Code_Backend` 目錄建立 `.env`：
 
 ```env
 DATABASE_URL="postgresql://<user>:<password>@<pooler-host>:<port>/<db>?sslmode=require"
@@ -133,4 +133,4 @@ npm run dev
 ## 相關文件
 
 - [根目錄 README（雙專案總覽）](../README.md)
-- [前端 README](../my-volleyball-vue/README.md)
+- [前端 README](../Court_and_Code_Frontend/README.md)
